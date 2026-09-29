@@ -129,6 +129,8 @@ export const GameState = schema({
   lobbyId: t.string().default(''),
   phase: t.string().default('LOBBY'), // LOBBY | MARKET | LOAD_BAG | DECLARATION | INSPECTION | ROUND_END | GAME_OVER
   round: t.number().default(0),
+  totalRounds: t.number().default(0),
+  sheriffRounds: t.number().default(0),
   sheriffId: t.string().default(''),
   deputyIds: t.array('string'),
   activeMerchantId: t.string().default(''),

@@ -15,6 +15,7 @@ import { SettingsModal } from '../ui/SettingsModal';
 import { NegotiationOfferModal } from '../ui/NegotiationOfferModal';
 import { NegotiationFeedback } from '../ui/NegotiationFeedback';
 import { DiscardPileModal } from '../ui/DiscardPileModal';
+import { GameOverModal } from '../ui/GameOverModal';
 
 export function GameScene() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -28,6 +29,7 @@ export function GameScene() {
 
   const phase = useGameStore((s) => s.phase);
   const round = useGameStore((s) => s.round);
+  const totalRounds = useGameStore((s) => s.totalRounds);
   const sheriffId = useGameStore((s) => s.sheriffId);
   const deputyIds = useGameStore((s) => s.deputyIds);
   const enableDeputies = useGameStore((s) => s.enableDeputies);
@@ -59,6 +61,7 @@ export function GameScene() {
           <span className="w-1 h-3.5 bg-tavern-border rounded-full" />
           <span className="font-display text-xs text-parchment">
             Round <span className="font-bold text-gold">{round || 1}</span>
+            {totalRounds > 0 && <span className="text-parchment/60 font-body"> of {totalRounds}</span>}
           </span>
           {enableDeputies ? (
             <>
@@ -161,6 +164,9 @@ export function GameScene() {
 
       {/* Discard Pile Viewer Modal */}
       <DiscardPileModal />
+
+      {/* Endgame Victory & Standings Modal */}
+      <GameOverModal />
 
       {/* Settings & Accessibility Modal */}
       <SettingsModal

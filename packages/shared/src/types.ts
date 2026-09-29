@@ -149,4 +149,14 @@ export interface BribeReconciliationRecord {
   voidedBagCardsCount: number;
   summaryText: string;
 }
-
+export interface ClientPlayerScore {
+  playerId: string;
+  name: string;
+  gold: number;
+  goodsValue: number;
+  bonusPoints: number;
+  totalScore: number;
+  legalGoodsCount: number;
+  contrabandCount: number;
+  rank: number;
+}

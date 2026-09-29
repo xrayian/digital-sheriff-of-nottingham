@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { defineServer, defineRoom, matchMaker } from 'colyseus';
 import { Client, Callbacks, Room } from '@colyseus/sdk';
 import { NottinghamRoom } from '../../src/rooms/NottinghamRoom';
+import { CardState } from '../../src/schema/GameState';
 
 describe('NottinghamRoom (Colyseus 0.18)', () => {
   const TEST_PORT = 2569;
@@ -375,5 +376,81 @@ describe('NottinghamRoom (Colyseus 0.18)', () => {
     await room2.leave();
     await room3.leave();
   });
+
+  it('transitions to GAME_OVER, reveals zero-knowledge stands, and produces leaderboard upon game end', async () => {
+    const room1 = await client1.create('nottingham', {
+      playerName: 'Robin',
+      maxPlayers: 3,
+      enableRoyalGoods: true,
+      enableBlackMarket: true,
+      sheriffRounds: 2,
+    });
+    const room2 = await client2.joinById(room1.roomId, { playerName: 'Marian' });
+    const room3 = await client3.joinById(room1.roomId, { playerName: 'LittleJohn' });
+
+    await delay(100);
+
+    room1.send('ready');
+    room2.send('ready');
+    room3.send('ready');
+    await delay(200);
+
+    const serverRoom = matchMaker.getLocalRoomById(room1.roomId) as NottinghamRoom;
+    expect(serverRoom.state.phase).toBe('MARKET');
+    expect(serverRoom.state.sheriffRounds).toBe(2);
+    expect(serverRoom.state.totalRounds).toBe(6);
+
+    // Verify client received initial round metadata
+    expect(room1.state.sheriffRounds).toBe(2);
+    expect(room1.state.totalRounds).toBe(6);
+
+    // Place a contraband card on Marian's stand
+    const marian = serverRoom.state.players.get(room2.sessionId)!;
+    const contrabandCard = new CardState({
+      id: 'contra-silk-1',
+      name: 'Silk',
+      classification: 'CONTRABAND',
+      contrabandType: 'SILK',
+      value: 4,
+      penalty: 2,
+    });
+    marian.standContraband.push(contrabandCard);
+    // Give owner view access initially
+    serverRoom.clients.find((c) => c.sessionId === room2.sessionId)?.view?.add(contrabandCard);
+
+    await delay(100);
+
+    // Robin (room1) should not see Marian's contraband card due to zero-knowledge isolation
+    expect(room1.state.players.get(room2.sessionId)?.standContraband?.length ?? 0).toBe(0);
+
+    // Fast-forward rounds to totalRounds (6) to trigger game finish
+    serverRoom.state.round = 6;
+    (serverRoom as any).handleRoundEnd();
+
+    await delay(200);
+
+    // Game should be in GAME_OVER state
+    expect(serverRoom.state.phase).toBe('GAME_OVER');
+    expect(room1.state.phase).toBe('GAME_OVER');
+    expect(room2.state.phase).toBe('GAME_OVER');
+    expect(room3.state.phase).toBe('GAME_OVER');
+
+    // Leaderboard populated
+    expect(serverRoom.state.leaderboard.length).toBe(3);
+    expect(room1.state.leaderboard.length).toBe(3);
+    expect(room1.state.winnerId).toBeDefined();
+    expect(typeof room1.state.winningScore).toBe('number');
+
+    // Zero-knowledge reveal: Robin (room1) can now see Marian's stand contraband!
+    const marianStandOnRobin = room1.state.players.get(room2.sessionId)?.standContraband;
+    expect(marianStandOnRobin).toBeDefined();
+    expect(marianStandOnRobin!.length).toBe(1);
+    expect(marianStandOnRobin![0].name).toBe('Silk');
+
+    await room1.leave();
+    await room2.leave();
+    await room3.leave();
+  });
 });
+
 

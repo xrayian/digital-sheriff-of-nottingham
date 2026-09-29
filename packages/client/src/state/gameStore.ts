@@ -6,6 +6,7 @@ import type {
   NegotiationIntendedOutcome,
   ForcedCommitmentOutcome,
   BribeReconciliationRecord,
+  ClientPlayerScore,
 } from '@sheriff/shared';
 import { soundManager } from '../audio/soundManager';
 
@@ -146,6 +147,9 @@ interface GameStore {
   bribeOffers: ClientBribeOffer[];
   winnerId: string | null;
   winningScore: number;
+  totalRounds: number;
+  sheriffRounds: number;
+  leaderboard: ClientPlayerScore[];
 
   // Module Expansion State
   enableRoyalGoods: boolean;
@@ -250,6 +254,9 @@ const initialState = {
   isDeskMinimized: false,
   winnerId: null as string | null,
   winningScore: 0,
+  totalRounds: 0,
+  sheriffRounds: 0,
+  leaderboard: [] as ClientPlayerScore[],
   enableRoyalGoods: false,
   enableDeputies: false,
   enableBlackMarket: false,
@@ -453,6 +460,20 @@ export const useGameStore = create<GameStore>((set) => ({
       ? Array.from(state.pendingCommitments).map(mapCommitment)
       : [];
 
+    const leaderboard: ClientPlayerScore[] = state.leaderboard
+      ? Array.from(state.leaderboard).map((entry: any) => ({
+          playerId: entry.playerId,
+          name: entry.name,
+          gold: entry.gold ?? 0,
+          goodsValue: entry.goodsValue ?? 0,
+          bonusPoints: entry.bonusPoints ?? 0,
+          totalScore: entry.totalScore ?? 0,
+          legalGoodsCount: entry.legalGoodsCount ?? 0,
+          contrabandCount: entry.contrabandCount ?? 0,
+          rank: entry.rank ?? 1,
+        }))
+      : [];
+
     const prev = useGameStore.getState();
     const phaseChanged = prev.phase !== state.phase;
     const merchantChanged = prev.activeMerchantId !== state.activeMerchantId;
@@ -465,6 +486,8 @@ export const useGameStore = create<GameStore>((set) => ({
     set({
       phase: state.phase as GamePhase,
       round: state.round || 0,
+      totalRounds: state.totalRounds || 0,
+      sheriffRounds: state.sheriffRounds || 0,
       sheriffId: state.sheriffId || null,
       deputyIds: state.deputyIds ? Array.from(state.deputyIds) : [],
       activeMerchantId: state.activeMerchantId || null,
@@ -480,6 +503,7 @@ export const useGameStore = create<GameStore>((set) => ({
       negotiationSequence: state.negotiationSequence || 1,
       winnerId: state.winnerId || null,
       winningScore: state.winningScore || 0,
+      leaderboard,
       enableRoyalGoods: Boolean(state.enableRoyalGoods),
       enableDeputies: Boolean(state.enableDeputies),
       enableBlackMarket: Boolean(state.enableBlackMarket),

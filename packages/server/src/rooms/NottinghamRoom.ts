@@ -143,6 +143,7 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
   bribeSequenceNumber = 1;
   deputiesEngineState?: DeputiesState;
   blackMarketEngineState?: BlackMarketState;
+  optionsSheriffRounds?: number;
 
   onCreate(options: any) {
     this.roomId = generateRoomCode();
@@ -153,6 +154,7 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
     this.state.enableRoyalGoods = options?.enableRoyalGoods || false;
     this.state.enableDeputies = options?.enableDeputies || false;
     this.state.enableBlackMarket = options?.enableBlackMarket || false;
+    this.optionsSheriffRounds = options?.sheriffRounds ? Number(options.sheriffRounds) : undefined;
 
     this.setupMessageHandlers();
   }
@@ -1285,6 +1287,14 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
     this.state.sheriffId = initialSheriffId;
     this.state.round = 1;
 
+    const effectivePlayerCount = this.tableSeatIds.length;
+    const requiredSheriffTurns =
+      this.optionsSheriffRounds ||
+      SHERIFF_ROUNDS_BY_PLAYER_COUNT[effectivePlayerCount] ||
+      2;
+    this.state.sheriffRounds = requiredSheriffTurns;
+    this.state.totalRounds = is6pDeputies ? 9 : (requiredSheriffTurns * effectivePlayerCount);
+
     // Deal starting hands
     const { hands, remainingDeck } = dealStartingHands(this.internalDrawPile, this.tableSeatIds, 6);
     this.internalDrawPile = remainingDeck;
@@ -2099,18 +2109,34 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
 
       this.state.round++;
     } else {
-      const currentSheriff = this.state.players.get(this.state.sheriffId)!;
-      currentSheriff.sheriffCount++;
+      const currentSheriff = this.state.players.get(this.state.sheriffId);
+      if (currentSheriff) {
+        currentSheriff.sheriffCount++;
+      }
 
-      const playerCount = this.tableSeatIds.length;
-      const requiredSheriffTurns = SHERIFF_ROUNDS_BY_PLAYER_COUNT[playerCount] || 2;
+      const activePlayers = this.tableSeatIds
+        .map((id) => this.state.players.get(id))
+        .filter((p): p is PlayerState => Boolean(p && p.connected !== false));
 
-      let isGameOver = true;
-      this.state.players.forEach((p) => {
-        if (p.sheriffCount < requiredSheriffTurns) {
-          isGameOver = false;
-        }
-      });
+      const requiredSheriffTurns =
+        this.optionsSheriffRounds ||
+        this.state.sheriffRounds ||
+        SHERIFF_ROUNDS_BY_PLAYER_COUNT[this.tableSeatIds.length] ||
+        2;
+
+      const totalRounds =
+        this.state.totalRounds || (requiredSheriffTurns * this.tableSeatIds.length);
+
+      const allMetSheriffTurns =
+        activePlayers.length > 0 &&
+        activePlayers.every((p) => p.sheriffCount >= requiredSheriffTurns);
+
+      const reachedTotalRounds = this.state.round >= totalRounds;
+
+      const deckDepleted =
+        this.internalDrawPile.length === 0 && this.internalDiscardPile.length === 0;
+
+      const isGameOver = allMetSheriffTurns || reachedTotalRounds || deckDepleted;
 
       if (isGameOver) {
         this.finishGame();
@@ -2171,10 +2197,12 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
   private finishGame() {
     this.state.phase = 'GAME_OVER';
 
-    // Reveal all contraband identities to all clients
+    // Reveal all contraband and royal identities to all clients with zero-knowledge subscription
     this.state.players.forEach((player) => {
       this.clients.forEach((c) => {
         if (c.view) {
+          c.view.subscribe(player.standContraband);
+          c.view.subscribe(player.standRoyal);
           c.view.add(player.standContraband);
           c.view.add(player.standRoyal);
           for (const card of player.standContraband) c.view.add(card);
@@ -2219,5 +2247,11 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
       this.state.winnerId = breakdowns[0].playerId;
       this.state.winningScore = breakdowns[0].totalScore;
     }
+
+    this.broadcast('game_over', {
+      winnerId: this.state.winnerId,
+      winningScore: this.state.winningScore,
+      leaderboard: breakdowns,
+    });
   }
 }

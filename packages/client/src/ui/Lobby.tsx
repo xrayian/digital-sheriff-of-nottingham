@@ -18,6 +18,7 @@ export function Lobby() {
   const [enableRoyalGoods, setEnableRoyalGoods] = useState(false);
   const [enableDeputies, setEnableDeputies] = useState(false);
   const [enableBlackMarket, setEnableBlackMarket] = useState(false);
+  const [sheriffRounds, setSheriffRounds] = useState<number | undefined>(undefined);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const store = useGameStore();
@@ -34,6 +35,7 @@ export function Lobby() {
         enableRoyalGoods,
         enableDeputies: maxPlayers === 6 ? enableDeputies : false,
         enableBlackMarket,
+        sheriffRounds: maxPlayers === 3 ? (sheriffRounds ?? 3) : undefined,
       });
       setView('room');
     } catch (err: any) {
@@ -133,6 +135,36 @@ export function Lobby() {
             ))}
           </div>
         </div>
+
+        {maxPlayers === 3 && (
+          <div className="bg-tavern-surface p-3 rounded-lg border border-tavern-border">
+            <label className="block text-gold-muted text-xs mb-2 font-display uppercase tracking-wider">3-Player Match Duration</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSheriffRounds(3)}
+                className={`py-1.5 px-3 rounded text-xs font-display font-bold transition-all ${
+                  (sheriffRounds ?? 3) === 3
+                    ? 'bg-gold/20 border border-gold text-gold-light'
+                    : 'bg-tavern-bg/50 border border-tavern-border text-parchment/60 hover:text-white'
+                }`}
+              >
+                Standard (3 Turns / 9 Rnds)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSheriffRounds(2)}
+                className={`py-1.5 px-3 rounded text-xs font-display font-bold transition-all ${
+                  sheriffRounds === 2
+                    ? 'bg-gold/20 border border-gold text-gold-light'
+                    : 'bg-tavern-bg/50 border border-tavern-border text-parchment/60 hover:text-white'
+                }`}
+              >
+                Quick (2 Turns / 6 Rnds)
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 border-t border-tavern-border pt-4">
           <label className="block text-gold-muted text-sm font-display">Expansion Modules</label>
@@ -250,7 +282,7 @@ export function Lobby() {
         <div className="text-center mb-8">
           <h2 className="text-sm font-display text-gold-muted tracking-widest uppercase mb-2">Room Code</h2>
           <div className="flex items-center justify-center gap-3">
-            <span className="text-4xl font-display text-gold tracking-widest select-all font-mono font-bold">{store.roomId}</span>
+            <span className="text-4xl text-gold tracking-widest select-all font-mono font-bold">{store.roomId}</span>
             <button
               type="button"
               onClick={() => {
