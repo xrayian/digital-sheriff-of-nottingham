@@ -28,24 +28,28 @@ export function GameOverModal() {
 
   if (phase !== 'GAME_OVER') return null;
 
-  const winner = Array.from(playersMap.values()).find((p) => p.id === winnerId);
-  const winnerName = winner?.name || leaderboard[0]?.name || 'Unknown Champion';
-  const isLocalWinner = localPlayerId === winnerId || (leaderboard[0] && leaderboard[0].playerId === localPlayerId);
+  const coWinners = leaderboard.filter((p) => p.rank === 1);
+  const isSharedVictory = coWinners.length > 1;
+  const isLocalWinner = coWinners.some((w) => w.playerId === localPlayerId);
+
+  const winnerNamesDisplay = isSharedVictory
+    ? coWinners.map((w) => w.name).join(' & ')
+    : (coWinners[0]?.name || Array.from(playersMap.values()).find((p) => p.id === winnerId)?.name || 'Unknown Champion');
 
   const handleReturnToLobby = () => {
     network.leave();
   };
 
-  const getRankBadge = (rank: number) => {
+  const getRankBadge = (rank: number, isTied: boolean) => {
     switch (rank) {
       case 1:
-        return { emoji: '🥇', label: '1st', bg: 'bg-amber-500/20 text-gold-light border-gold' };
+        return { emoji: '🥇', label: isTied ? 'T-1st' : '1st', bg: 'bg-amber-500/20 text-gold-light border-gold' };
       case 2:
-        return { emoji: '🥈', label: '2nd', bg: 'bg-slate-300/20 text-slate-200 border-slate-400' };
+        return { emoji: '🥈', label: isTied ? 'T-2nd' : '2nd', bg: 'bg-slate-300/20 text-slate-200 border-slate-400' };
       case 3:
-        return { emoji: '🥉', label: '3rd', bg: 'bg-amber-800/20 text-amber-400 border-amber-600' };
+        return { emoji: '🥉', label: isTied ? 'T-3rd' : '3rd', bg: 'bg-amber-800/20 text-amber-400 border-amber-600' };
       default:
-        return { emoji: '🎖️', label: `${rank}th`, bg: 'bg-tavern-surface text-parchment/70 border-tavern-border' };
+        return { emoji: '🎖️', label: isTied ? `T-${rank}th` : `${rank}th`, bg: 'bg-tavern-surface text-parchment/70 border-tavern-border' };
     }
   };
 
@@ -76,15 +80,28 @@ export function GameOverModal() {
 
             <div className="flex flex-col items-center gap-1 mt-1">
               <span className="text-sm font-display text-gold-light uppercase tracking-widest font-bold">
-                {isLocalWinner ? '🌟 Sovereign of the Market! 🌟' : 'Winner Crowned'}
+                {isLocalWinner
+                  ? (isSharedVictory ? '🌟 Co-Sovereigns of the Market! (Shared Victory) 🌟' : '🌟 Sovereign of the Market! 🌟')
+                  : (isSharedVictory ? '🤝 Shared Victory Declared!' : 'Winner Crowned')}
               </span>
-              <p className="text-base md:text-xl font-display font-bold text-white">
-                <span className="text-gold font-black">{winnerName}</span> wins with{' '}
-                <span className="text-gold font-black underline underline-offset-4">{winningScore || leaderboard[0]?.totalScore || 0} Points</span>!
+              <p className="text-base md:text-xl font-display font-bold text-white text-center">
+                {isSharedVictory ? (
+                  <>
+                    <span className="text-gold font-black">{winnerNamesDisplay}</span> share victory with{' '}
+                    <span className="text-gold font-black underline underline-offset-4">{winningScore || leaderboard[0]?.totalScore || 0} Points</span>!
+                  </>
+                ) : (
+                  <>
+                    <span className="text-gold font-black">{winnerNamesDisplay}</span> wins with{' '}
+                    <span className="text-gold font-black underline underline-offset-4">{winningScore || leaderboard[0]?.totalScore || 0} Points</span>!
+                  </>
+                )}
               </p>
               {isLocalWinner && (
-                <p className="text-xs text-emerald-400 font-body max-w-md mt-1 animate-pulse">
-                  Your cunning trades, honest declarations, and bold ventures through the Nottingham gates have brought you ultimate triumph!
+                <p className="text-xs text-emerald-400 font-body max-w-md mt-1 animate-pulse text-center">
+                  {isSharedVictory
+                    ? 'Through tied skill, cunning trades, and bold ventures, you share the glorious crown of Nottingham!'
+                    : 'Your cunning trades, honest declarations, and bold ventures through the Nottingham gates have brought you ultimate triumph!'}
                 </p>
               )}
             </div>
@@ -99,9 +116,10 @@ export function GameOverModal() {
 
             <div className="flex flex-col gap-2">
               {leaderboard.map((entry, idx) => {
-                const rankInfo = getRankBadge(entry.rank || idx + 1);
+                const isTied = leaderboard.filter((p) => p.rank === entry.rank).length > 1;
+                const rankInfo = getRankBadge(entry.rank || idx + 1, isTied);
                 const isLocal = entry.playerId === localPlayerId;
-                const isWinner = entry.rank === 1 || idx === 0;
+                const isWinner = entry.rank === 1;
                 const player = playersMap.get(entry.playerId);
                 const isExpanded = expandedPlayerId === entry.playerId;
 

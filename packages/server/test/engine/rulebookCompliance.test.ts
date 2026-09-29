@@ -357,6 +357,31 @@ describe('Sheriff of Nottingham 2nd Edition — Official Rulebook Compliance Tes
       expect(scores[1].playerId).toBe('p2');
       expect(scores[1].rank).toBe(2);
     });
+
+    it('Exact Tie on Points, Legal Goods, and Contraband: Awards Shared Victory (rank 1 to both)', () => {
+      // Both players end with identical total score, legal goods count, and contraband count
+      const p1: PlayerStandInput = {
+        id: 'p1',
+        name: 'P1',
+        gold: 50,
+        standLegal: [makeLegal('p1_a_1', 'APPLE'), makeLegal('p1_a_2', 'APPLE')],
+        standContraband: [makeContraband('p1_c_1', 'PEPPER', 6)],
+      };
+      const p2: PlayerStandInput = {
+        id: 'p2',
+        name: 'P2',
+        gold: 50,
+        standLegal: [makeLegal('p2_a_1', 'APPLE'), makeLegal('p2_a_2', 'APPLE')],
+        standContraband: [makeContraband('p2_c_1', 'PEPPER', 6)],
+      };
+
+      const scores = calculateScores([p1, p2]);
+      expect(scores[0].totalScore).toBe(scores[1].totalScore);
+      expect(scores[0].legalGoodsCount).toBe(scores[1].legalGoodsCount);
+      expect(scores[0].contrabandCount).toBe(scores[1].contrabandCount);
+      expect(scores[0].rank).toBe(1);
+      expect(scores[1].rank).toBe(1);
+    });
   });
 
   /* -------------------------------------------------------------------------- */

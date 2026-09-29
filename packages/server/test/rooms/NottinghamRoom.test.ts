@@ -451,6 +451,84 @@ describe('NottinghamRoom (Colyseus 0.18)', () => {
     await room2.leave();
     await room3.leave();
   });
+
+  it('handles player forfeit and crowns remaining connected player without hanging', async () => {
+    const room1 = await client1.create('nottingham', { playerName: 'Robin' });
+    const room2 = await client2.joinById(room1.roomId, { playerName: 'Marian' });
+    const room3 = await client3.joinById(room1.roomId, { playerName: 'LittleJohn' });
+
+    await delay(100);
+
+    room1.send('ready');
+    room2.send('ready');
+    room3.send('ready');
+    await delay(200);
+
+    const serverRoom = matchMaker.getLocalRoomById(room1.roomId) as NottinghamRoom;
+    expect(serverRoom.state.phase).toBe('MARKET');
+
+    // Marian and LittleJohn leave mid-game
+    await room2.leave();
+    await room3.leave();
+    await delay(200);
+
+    // Only Robin remains connected -> game ends and Robin is crowned rank 1 by forfeit
+    expect(serverRoom.state.phase).toBe('GAME_OVER');
+    expect(room1.state.phase).toBe('GAME_OVER');
+    expect(room1.state.leaderboard.length).toBeGreaterThanOrEqual(1);
+    expect(room1.state.leaderboard[0].playerId).toBe(room1.sessionId);
+    expect(room1.state.leaderboard[0].rank).toBe(1);
+
+    await room1.leave();
+  });
+
+  it('supports shared victory with multiple co-winners tied for rank 1', async () => {
+    const room1 = await client1.create('nottingham', { playerName: 'Robin' });
+    const room2 = await client2.joinById(room1.roomId, { playerName: 'Marian' });
+    const room3 = await client3.joinById(room1.roomId, { playerName: 'LittleJohn' });
+
+    await delay(100);
+
+    room1.send('ready');
+    room2.send('ready');
+    room3.send('ready');
+    await delay(200);
+
+    const serverRoom = matchMaker.getLocalRoomById(room1.roomId) as NottinghamRoom;
+
+    // Give Robin and Marian identical gold and legal cards to ensure tie
+    const robin = serverRoom.state.players.get(room1.sessionId)!;
+    const marian = serverRoom.state.players.get(room2.sessionId)!;
+    robin.gold = 50;
+    marian.gold = 50;
+
+    robin.standLegal.clear();
+    marian.standLegal.clear();
+    robin.standContraband.clear();
+    marian.standContraband.clear();
+
+    const apple1 = new CardState({ id: 'a1', name: 'Apple', classification: 'LEGAL', goodType: 'APPLE', value: 2 });
+    const apple2 = new CardState({ id: 'a2', name: 'Apple', classification: 'LEGAL', goodType: 'APPLE', value: 2 });
+    robin.standLegal.push(apple1);
+    marian.standLegal.push(apple2);
+
+    // Fast-forward rounds to totalRounds
+    serverRoom.state.round = serverRoom.state.totalRounds;
+    (serverRoom as any).handleRoundEnd();
+
+    await delay(200);
+
+    expect(serverRoom.state.phase).toBe('GAME_OVER');
+    expect(room1.state.phase).toBe('GAME_OVER');
+
+    // Both Robin and Marian should have rank 1
+    const rank1s = Array.from(room1.state.leaderboard).filter((b) => b.rank === 1);
+    expect(rank1s.length).toBe(2);
+
+    await room1.leave();
+    await room2.leave();
+    await room3.leave();
+  });
 });
 
 

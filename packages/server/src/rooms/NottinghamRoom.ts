@@ -191,43 +191,57 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
     // Normal disconnection / voluntary leave (code 1000 is normal WS closure)
     const isConsented = code === 1000 || code === 4000;
 
-    if (this.state.phase === 'LOBBY' || isConsented) {
+    if (this.state.phase === 'LOBBY') {
       this.state.players.delete(client.sessionId);
       const idx = this.tableSeatIds.indexOf(client.sessionId);
       if (idx !== -1) this.tableSeatIds.splice(idx, 1);
     } else {
       player.connected = false;
-      try {
-        // Allow reconnection buffer (GDD §6.2)
-        await this.allowReconnection(client, 30);
-        player.connected = true;
-        // Re-grant client view permissions on reconnect with complete zero-knowledge isolation
-        if (client.view) {
-          const view = client.view;
-          view.add(player);
-          view.subscribe(player.hand);
-          view.subscribe(player.standContraband);
-          view.subscribe(player.standRoyal);
-          for (const card of player.hand) view.add(card);
-          for (const card of player.standContraband) view.add(card);
-          for (const card of player.standRoyal) view.add(card);
-          if (player.sealedBag) {
-            view.add(player.sealedBag);
-            view.subscribe(player.sealedBag.cards);
-            for (const card of player.sealedBag.cards) view.add(card);
-          }
-          this.state.players.forEach((otherP) => {
-            if (otherP.id !== player.id && otherP.sealedBag) {
-              view.add(otherP.sealedBag);
-              if (otherP.sealedBag.isRevealed) {
-                view.subscribe(otherP.sealedBag.cards);
-                for (const card of otherP.sealedBag.cards) view.add(card);
-              }
+
+      if (!isConsented) {
+        try {
+          // Allow reconnection buffer (GDD §6.2)
+          await this.allowReconnection(client, 30);
+          player.connected = true;
+          // Re-grant client view permissions on reconnect with complete zero-knowledge isolation
+          if (client.view) {
+            const view = client.view;
+            view.add(player);
+            view.subscribe(player.hand);
+            view.subscribe(player.standContraband);
+            view.subscribe(player.standRoyal);
+            for (const card of player.hand) view.add(card);
+            for (const card of player.standContraband) view.add(card);
+            for (const card of player.standRoyal) view.add(card);
+            if (player.sealedBag) {
+              view.add(player.sealedBag);
+              view.subscribe(player.sealedBag.cards);
+              for (const card of player.sealedBag.cards) view.add(card);
             }
-          });
+            this.state.players.forEach((otherP) => {
+              if (otherP.id !== player.id && otherP.sealedBag) {
+                view.add(otherP.sealedBag);
+                if (otherP.sealedBag.isRevealed) {
+                  view.subscribe(otherP.sealedBag.cards);
+                  for (const card of otherP.sealedBag.cards) view.add(card);
+                }
+              }
+            });
+          }
+        } catch {
+          player.connected = false;
         }
-      } catch {
-        player.connected = false;
+      }
+
+      // If active game has 1 or fewer connected players left, end match and crown remaining player
+      if (this.state.phase !== 'GAME_OVER') {
+        const connectedPlayers = this.tableSeatIds
+          .map((id) => this.state.players.get(id))
+          .filter((p) => p && p.connected !== false);
+
+        if (connectedPlayers.length <= 1) {
+          this.finishGame();
+        }
       }
     }
   }
@@ -2084,8 +2098,13 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
         this.state.bootyTile.goods.clear();
       }
 
-      // Check endgame for 6p Deputies: Deputy deck depleted 3 times (9 rounds)
-      const isGameOver = this.state.round >= 9 || this.deputiesEngineState.deckDepletions >= 3;
+      // Check endgame for 6p Deputies: Deputy deck depleted 3 times (9 rounds) OR card deck depleted
+      const deckDepleted =
+        this.internalDrawPile.length === 0 && this.internalDiscardPile.length === 0;
+      const isGameOver =
+        this.state.round >= 9 ||
+        this.deputiesEngineState.deckDepletions >= 3 ||
+        deckDepleted;
 
       if (isGameOver) {
         this.finishGame();
@@ -2170,7 +2189,7 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
       const player = this.state.players.get(id)!;
       const needed = Math.max(0, 6 - player.hand.length);
       if (needed > 0) {
-        const { drawn, drawPile, discardPile } = drawCards(
+        const { drawn, drawPile, discardPile, reshuffled } = drawCards(
           this.internalDrawPile,
           this.internalDiscardPile,
           needed
@@ -2178,6 +2197,9 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
         this.internalDrawPile = drawPile;
         this.internalDiscardPile = discardPile;
         this.state.drawPileCount = drawPile.length;
+        if (reshuffled) {
+          this.state.discardPile.clear();
+        }
 
         const client = this.clients.find((c) => c.sessionId === id);
         for (const card of drawn) {
@@ -2212,19 +2234,40 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
     });
 
     // Score game
-    const scoringInputs: PlayerStandInput[] = this.tableSeatIds.map((id) => {
-      const p = this.state.players.get(id)!;
-      return {
-        id: p.id,
-        name: p.name,
-        gold: p.gold,
-        standLegal: p.standLegal.map(stateToCard),
-        standContraband: p.standContraband.map(stateToCard),
-        standRoyal: p.standRoyal.map(stateToCard),
-      };
-    });
+    const scoringInputs: PlayerStandInput[] = this.tableSeatIds
+      .map((id) => this.state.players.get(id))
+      .filter((p): p is PlayerState => Boolean(p))
+      .map((p) => {
+        return {
+          id: p.id,
+          name: p.name,
+          gold: p.gold,
+          standLegal: p.standLegal.map(stateToCard),
+          standContraband: p.standContraband.map(stateToCard),
+          standRoyal: p.standRoyal.map(stateToCard),
+        };
+      });
 
     const breakdowns = calculateScores(scoringInputs);
+
+    // If game ended due to player forfeit / abandonment (only 1 connected player remains),
+    // ensure the active connected player is ranked #1 by forfeit
+    const connectedSeatIds = this.tableSeatIds.filter((id) => {
+      const p = this.state.players.get(id);
+      return p && p.connected !== false;
+    });
+
+    if (connectedSeatIds.length === 1 && breakdowns.length > 1) {
+      const remainingWinnerId = connectedSeatIds[0];
+      const winnerIdx = breakdowns.findIndex((b) => b.playerId === remainingWinnerId);
+      if (winnerIdx > 0) {
+        const [winnerBreakdown] = breakdowns.splice(winnerIdx, 1);
+        breakdowns.unshift(winnerBreakdown);
+        breakdowns.forEach((b, idx) => {
+          b.rank = idx + 1;
+        });
+      }
+    }
 
     this.state.leaderboard.clear();
     for (const b of breakdowns) {
@@ -2243,6 +2286,8 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
       );
     }
 
+    const coWinners = breakdowns.filter((b) => b.rank === 1);
+
     if (breakdowns.length > 0) {
       this.state.winnerId = breakdowns[0].playerId;
       this.state.winningScore = breakdowns[0].totalScore;
@@ -2252,6 +2297,8 @@ export class NottinghamRoom extends Room<{ state: GameState }> {
       winnerId: this.state.winnerId,
       winningScore: this.state.winningScore,
       leaderboard: breakdowns,
+      coWinners: coWinners.map((w) => ({ playerId: w.playerId, name: w.name })),
+      isSharedVictory: coWinners.length > 1,
     });
   }
 }
